@@ -148,7 +148,7 @@ class AddItemScreen extends StatelessWidget {
               controller: controller,
               decoration: const InputDecoration(
                 labelText: "Ny uppgift",
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder()
               ),
             ),
             const SizedBox(height: 16), // Litet mellanrum
