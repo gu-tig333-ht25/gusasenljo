@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
+import 'home_screen.dart';
 
 void main() {
-  runApp(const MyApp()); // Startar appen med MyApp som root-widget
-}
-
-// Enkel modell för en Task (uppgift)
-class Task {
-  String title; // Namn på uppgiften
-  bool done;   // Om uppgiften är klar eller inte
-  Task(this.title, {this.done = false}); // done är default false
+  runApp(const MyApp()); //kör appen
 }
 
 class MyApp extends StatelessWidget {
@@ -16,6 +10,8 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const MaterialApp(
+      home: HomeScreen(), //startar homescreen
     return MaterialApp(
       home: const HomeScreen(), // Sätter HomeScreen som första skärmen
     );
