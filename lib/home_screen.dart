@@ -2,60 +2,65 @@
 import 'package:flutter/material.dart';
 import 'task.dart';
 import 'add_item_screen.dart';
+import 'api.dart';
 
 
-//statefullwidget för att kunna ändra saker i listan
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Lista med aktiva tasks
-  List<Task> tasks = [
-    Task("Äta"),
-    Task("Sova"),
-    Task("Träna"),
-  ];
+  // Lista med tasks
+  List<Task> tasks = [];
 
-  // Lista med borttagna tasks
-  List<Task> removedTasks = [];
-
-  // Filter för visning av uppgifter, standrad är all
-  // Kan vara: 'all', 'done', 'notDone', 'removed'
+  // Filter: 'all', 'done', 'notDone'
   String filter = 'all';
 
-  // Returnerar listan med tasks baserat på valt filter
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks(); // Hämta tasks från API när appen startar
+  }
+
+  /// Hämtar tasks från API och uppdaterar lokalt
+  Future<void> _loadTasks() async {
+    try {
+      final apiTasks = await ApiService.fetchTasks();
+      if (!mounted) return; // Säkerställ att widgeten fortfarande finns
+      setState(() {
+        tasks = apiTasks;
+      });
+    } catch (e) {
+      debugPrint("Error fetching tasks: $e");
+    }
+  }
+
+  /// Returnerar lista baserat på valt filter
   List<Task> get filteredTasks {
-    if (filter == 'done') {
-      // Endast de som är markerade som klara
-      return tasks.where((task) => task.done).toList();
-    } else if (filter == 'notDone') {
-       // Endast de som INTE är klara
-      return tasks.where((task) => !task.done).toList();
-    } else if (filter == 'removed') {
-       // De som har tagits bort
-      return removedTasks;
-    } else {
-      return tasks;
+    switch (filter) {
+      case 'done':
+        return tasks.where((t) => t.done).toList();
+      case 'notDone':
+        return tasks.where((t) => !t.done).toList();
+      default:
+        return tasks.toList();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      //översta baren
+      // AppBar med titel och filter
       appBar: AppBar(
         title: const Text(
-          "Att göra", //titeln på översta baren
+          "Att göra",
           style: TextStyle(color: Colors.white),
         ),
         centerTitle: true,
         backgroundColor: Colors.grey,
-
-        //menyn till vänster man som man kan välja 'status' i
         leading: PopupMenuButton<String>(
           icon: const Icon(Icons.filter_list, color: Colors.black),
           onSelected: (value) {
@@ -64,66 +69,83 @@ class _HomeScreenState extends State<HomeScreen> {
             });
           },
           itemBuilder: (context) => const [
-            PopupMenuItem(value: 'all', child: Text('Alla')), //visa allt, raderna under förklarar sig själva
+            PopupMenuItem(value: 'all', child: Text('Alla')),
             PopupMenuItem(value: 'done', child: Text('Gjorda')),
             PopupMenuItem(value: 'notDone', child: Text('Ogjorda')),
-            PopupMenuItem(value: 'removed', child: Text('Borttagna')),
           ],
         ),
       ),
 
-      //'huvud' funktionen eller vad man kallar det som visar listan i homescreen
-      body: ListView(
-        children: filteredTasks.map((task) {
-          return Card( //skapar en ram runt varje uppgift för att enklare särskilja 
-            shape: RoundedRectangleBorder(
-              side: const BorderSide(color: Colors.black, width: 1),
-              borderRadius: BorderRadius.circular(8),
+      // Lista med tasks
+      body: ListView.builder(
+        itemCount: filteredTasks.length,
+        itemBuilder: (context, index) {
+          final task = filteredTasks[index];
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.black, width: 1),
+              borderRadius: BorderRadius.circular(6),
             ),
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-
-            child: ListTile( //skapar kryssrutan till vänster där man kan klarmarkera 'ändra statusen'
+            child: ListTile(
               leading: Checkbox(
                 value: task.done,
-                onChanged: (val) {
+                onChanged: (val) async {
+                  if (val == null) return; // Säkerställ att vi inte får null
                   setState(() {
-                    task.done = val!; //statusen
+                    task.done = val;
                   });
+                  try {
+                    await ApiService.updateTask(task); // Uppdatera server
+                  } catch (e) {
+                    debugPrint("Error updating task: $e");
+                  }
                 },
               ),
-              title: Text( //uppgiftens namn
+              title: Text(
                 task.title,
-                style: const TextStyle(fontSize: 24, color: Colors.blue),
+                style: const TextStyle(fontSize: 20, color: Colors.blue),
               ),
-
-              trailing: IconButton( //krysset till höger om alla task/uppgifter
+              trailing: IconButton(
                 icon: const Icon(Icons.close, color: Colors.red),
-                onPressed: () {
-                  setState(() {
-                    tasks.remove(task); // Ta bort från aktiva listan
-                    removedTasks.add(task); // Lägg till i "borttagna"
-                  });
+                onPressed: () async {
+                  if (task.id == null) return; // Säkerställ giltigt ID
+                  try {
+                    await ApiService.deleteTask(task.id!); // Ta bort från server
+                    setState(() {
+                      tasks.remove(task); // Ta bort lokalt
+                    });
+                  } catch (e) {
+                    debugPrint("Error deleting task: $e");
+                  }
                 },
               ),
             ),
           );
-        }).toList(), //gör varje uppgift till listobjekt
+        },
       ),
 
-
-      floatingActionButton: FloatingActionButton( //knapp för att lägga till nya task
+      // Flytande knapp för att lägga till task
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.black,
+        child: const Icon(Icons.add, color: Colors.white),
         onPressed: () async {
-          final newTask = await Navigator.push(
+          final newTaskTitle = await Navigator.push<String>(
             context,
-            MaterialPageRoute(builder: (context) => const AddItemScreen()), //tar en till lägga till skärmen
+            MaterialPageRoute(builder: (context) => const AddItemScreen()),
           );
-          if (newTask != null && newTask.isNotEmpty) { //om något skriver lägger till det
-            setState(() {
-              tasks.add(Task(newTask));
-            });
+
+          if (newTaskTitle != null && newTaskTitle.isNotEmpty) {
+            final newTask = Task(newTaskTitle, done: false);
+            try {
+              await ApiService.addTask(newTask);
+              _loadTasks();
+            } catch (e) {
+              debugPrint("Error adding task: $e");
+            }
           }
         },
-        child: const Icon(Icons.add),
       ),
     );
   }
