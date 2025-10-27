@@ -1,9 +1,7 @@
-
 import 'package:flutter/material.dart';
 import 'task.dart';
 import 'add_item_screen.dart';
 import 'api.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +17,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // Filter: 'all', 'done', 'notDone'
   String filter = 'all';
 
+  // För att visa laddningsindikator
+  bool isLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -27,14 +28,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Hämtar tasks från API och uppdaterar lokalt
   Future<void> _loadTasks() async {
+    setState(() => isLoading = true);
     try {
       final apiTasks = await ApiService.fetchTasks();
-      if (!mounted) return; // Säkerställ att widgeten fortfarande finns
+      if (!mounted) return;
       setState(() {
         tasks = apiTasks;
       });
     } catch (e) {
       debugPrint("Error fetching tasks: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Kunde inte hämta uppgifter från servern."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -76,55 +88,90 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
 
-      // Lista med tasks
-      body: ListView.builder(
-        itemCount: filteredTasks.length,
-        itemBuilder: (context, index) {
-          final task = filteredTasks[index];
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.black, width: 1),
-              borderRadius: BorderRadius.circular(6),
+      // Body
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: filteredTasks.length,
+              itemBuilder: (context, index) {
+                final task = filteredTasks[index];
+                return Container(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.black, width: 1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: ListTile(
+                    leading: Checkbox(
+                      value: task.done,
+                      onChanged: (val) async {
+                        if (val == null) return;
+
+                        // Spara gammalt värde
+                        final oldValue = task.done;
+
+                        // Uppdatera UI direkt
+                        setState(() {
+                          task.done = val;
+                        });
+
+                        // Försök uppdatera på servern
+                        try {
+                          await ApiService.updateTask(task);
+                        } catch (e) {
+                          debugPrint("Error updating task: $e");
+
+                          // Återställ UI om det misslyckas
+                          setState(() {
+                            task.done = oldValue;
+                          });
+
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Kunde inte uppdatera uppgift på servern.",
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    title: Text(
+                      task.title,
+                      style: const TextStyle(fontSize: 20, color: Colors.blue),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.red),
+                      onPressed: () async {
+                        if (task.id == null) return;
+                        try {
+                          await ApiService.deleteTask(task.id!);
+                          setState(() {
+                            tasks.remove(task);
+                          });
+                        } catch (e) {
+                          debugPrint("Error deleting task: $e");
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content:
+                                    Text("Kunde inte ta bort uppgift från servern."),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                );
+              },
             ),
-            child: ListTile(
-              leading: Checkbox(
-                value: task.done,
-                onChanged: (val) async {
-                  if (val == null) return; // Säkerställ att vi inte får null
-                  setState(() {
-                    task.done = val;
-                  });
-                  try {
-                    await ApiService.updateTask(task); // Uppdatera server
-                  } catch (e) {
-                    debugPrint("Error updating task: $e");
-                  }
-                },
-              ),
-              title: Text(
-                task.title,
-                style: const TextStyle(fontSize: 20, color: Colors.blue),
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.close, color: Colors.red),
-                onPressed: () async {
-                  if (task.id == null) return; // Säkerställ giltigt ID
-                  try {
-                    await ApiService.deleteTask(task.id!); // Ta bort från server
-                    setState(() {
-                      tasks.remove(task); // Ta bort lokalt
-                    });
-                  } catch (e) {
-                    debugPrint("Error deleting task: $e");
-                  }
-                },
-              ),
-            ),
-          );
-        },
-      ),
 
       // Flytande knapp för att lägga till task
       floatingActionButton: FloatingActionButton(
@@ -143,6 +190,15 @@ class _HomeScreenState extends State<HomeScreen> {
               _loadTasks();
             } catch (e) {
               debugPrint("Error adding task: $e");
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content:
+                        Text("Kunde inte lägga till uppgift på servern."),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             }
           }
         },
